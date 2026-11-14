@@ -1,0 +1,40 @@
+name: Test
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+  push:
+    branches: [main, dev]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      GOPATH: ${{ github.workspace }}/go
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}/go/src/github.com/fosrl/badger
+    steps:
+      # Traefik loads the plugin from a GOPATH layout, so check it out there.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: go/src/github.com/fosrl/badger
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go/src/github.com/fosrl/badger/go.mod
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Unit tests (race detector)
+        run: go test -race -count=1 ./...
+
+      # The plugin runs inside Traefik's yaegi interpreter, not as compiled Go.
+      - name: Tests under yaegi
+        run: |
+          go install github.com/traefik/yaegi/cmd/yaegi@v0.16.2
+          "$GOPATH/bin/yaegi" test -v .
