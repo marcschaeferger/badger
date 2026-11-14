@@ -237,7 +237,7 @@ func (p *Badger) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 			queryValues.Del(p.resourceSessionRequestParam)
 			cleanedQuery := queryValues.Encode()
-			originalRequestURL := fmt.Sprintf("%s://%s%s", p.getScheme(req), req.Host, req.URL.Path)
+			originalRequestURL := fmt.Sprintf("%s://%s%s", p.getScheme(req), req.Host, req.URL.EscapedPath())
 			if cleanedQuery != "" {
 				originalRequestURL = fmt.Sprintf("%s?%s", originalRequestURL, cleanedQuery)
 			}
@@ -366,7 +366,7 @@ func (p *Badger) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			cleanQuery := req.URL.Query()
 			cleanQuery.Del(p.accessTokenQueryParam)
 			cleaned := cleanQuery.Encode()
-			cleanURL := fmt.Sprintf("%s://%s%s", p.getScheme(req), req.Host, req.URL.Path)
+			cleanURL := fmt.Sprintf("%s://%s%s", p.getScheme(req), req.Host, req.URL.EscapedPath())
 			if cleaned != "" {
 				cleanURL = fmt.Sprintf("%s?%s", cleanURL, cleaned)
 			}
