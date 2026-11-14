@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/fosrl/badger/ips"
 	"github.com/fosrl/badger/version"
@@ -46,6 +47,10 @@ const (
 	defaultRemoteEmailHeader           = "Remote-Email"
 	defaultRemoteNameHeader            = "Remote-Name"
 	defaultRemoteRoleHeader            = "Remote-Role"
+
+	// pangolinRequestTimeout bounds every call to the Pangolin API so a hung
+	// upstream cannot pin request goroutines indefinitely.
+	pangolinRequestTimeout = 10 * time.Second
 )
 
 type Badger struct {
@@ -67,6 +72,7 @@ type Badger struct {
 	remoteEmailHeader           string
 	remoteNameHeader            string
 	remoteRoleHeader            string
+	httpClient                  *http.Client
 }
 
 func stringOrDefault(value, def string) string {
@@ -152,6 +158,7 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 		remoteEmailHeader:           stringOrDefault(config.RemoteEmailHeader, defaultRemoteEmailHeader),
 		remoteNameHeader:            stringOrDefault(config.RemoteNameHeader, defaultRemoteNameHeader),
 		remoteRoleHeader:            stringOrDefault(config.RemoteRoleHeader, defaultRemoteRoleHeader),
+		httpClient:                  &http.Client{Timeout: pangolinRequestTimeout},
 	}
 
 	// Validate required fields only if forward auth is enabled
@@ -218,7 +225,7 @@ func (p *Badger) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		}
 
 		verifyURL := fmt.Sprintf("%s/badger/exchange-session", p.apiBaseUrl)
-		resp, err := http.Post(verifyURL, "application/json", bytes.NewBuffer(jsonData))
+		resp, err := p.postJSON(req.Context(), verifyURL, jsonData)
 		if err != nil {
 			http.Error(rw, "Internal Server Error", http.StatusInternalServerError)
 			return
@@ -296,7 +303,7 @@ func (p *Badger) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	resp, err := http.Post(verifyURL, "application/json", bytes.NewBuffer(jsonData))
+	resp, err := p.postJSON(req.Context(), verifyURL, jsonData)
 	if err != nil {
 		http.Error(rw, "Internal Server Error", http.StatusInternalServerError)
 		return
@@ -426,6 +433,17 @@ func (p *Badger) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 
 	http.Error(rw, "Unauthorized", http.StatusUnauthorized)
+}
+
+// postJSON sends a JSON POST to the Pangolin API, bound to the incoming
+// request's context and the client timeout.
+func (p *Badger) postJSON(ctx context.Context, url string, body []byte) (*http.Response, error) {
+	apiReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	apiReq.Header.Set("Content-Type", "application/json")
+	return p.httpClient.Do(apiReq)
 }
 
 func (p *Badger) extractCookies(req *http.Request) map[string]string {
