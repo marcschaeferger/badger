@@ -276,10 +276,12 @@ func (p *Badger) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		}
 	}
 
+	requestScheme := p.getScheme(req)
+
 	cookieData := VerifyBody{
 		Sessions:           cookies,
 		OriginalRequestURL: originalRequestURL,
-		RequestScheme:      &req.URL.Scheme,
+		RequestScheme:      &requestScheme,
 		RequestHost:        &req.Host,
 		RequestPath:        &req.URL.Path,
 		RequestMethod:      &req.Method,
@@ -447,6 +449,15 @@ func (p *Badger) extractCookies(req *http.Request) map[string]string {
 func (p *Badger) getScheme(req *http.Request) string {
 	if req.TLS != nil {
 		return "https"
+	}
+	// Behind a trusted proxy (e.g. Cloudflare, whose CF-Visitor is mapped to
+	// X-Forwarded-Proto in setIPHeaders) TLS is terminated upstream, so honour
+	// the forwarded scheme. Never trust it from arbitrary clients.
+	if p.isTrustedIP(req.RemoteAddr) {
+		proto := strings.TrimSpace(strings.Split(req.Header.Get(xForwardProto), ",")[0])
+		if strings.EqualFold(proto, "https") {
+			return "https"
+		}
 	}
 	return "http"
 }
